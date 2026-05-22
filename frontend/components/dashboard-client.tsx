@@ -56,11 +56,20 @@ type Portfolio = {
 type RoundState = {
   tick: number;
   simulated_hour: number;
+  market_period?: "day" | "evening_peak" | "night" | string;
+  solar_availability_factor?: number;
   status: string;
   window_open: boolean;
   simulation_enabled?: boolean;
   orders_collected?: number;
+  buy_order_count?: number;
+  sell_order_count?: number;
   telemetry_count?: number;
+  volume_traded_kwh?: number;
+  clearing_price?: number;
+  trade_count?: number;
+  unmatched_buy_volume_kwh?: number;
+  unmatched_sell_volume_kwh?: number;
 };
 
 type FeedEvent = {
@@ -71,11 +80,16 @@ type FeedEvent = {
 };
 
 type TradeEvent = {
+  id?: string;
   buyer_node_id: string;
   seller_node_id: string;
   quantity_kwh: number;
   unit_price: number;
   total_cost: number;
+  platform_fee?: number;
+  buyer_debit?: number;
+  seller_credit?: number;
+  created?: string;
 };
 
 type TelemetryEvent = {
@@ -83,6 +97,8 @@ type TelemetryEvent = {
   consumption_kwh: number;
   battery_before_kwh: number;
   battery_after_kwh: number;
+  unmet_demand_kwh?: number;
+  exportable_energy_kwh?: number;
 };
 
 const storageKey = "voltnet-session";
@@ -97,6 +113,49 @@ function formatMoney(value: number) {
 
 function formatEnergy(value: number) {
   return `${value.toFixed(2)} kWh`;
+}
+
+function sum(values: number[]) {
+  return values.reduce((total, value) => total + value, 0);
+}
+
+function sellerCredit(trade: TradeEvent) {
+  return trade.seller_credit ?? trade.total_cost;
+}
+
+function buyerDebit(trade: TradeEvent) {
+  return trade.buyer_debit ?? trade.total_cost;
+}
+
+function marketPeriodLabel(period?: string) {
+  if (period === "day") {
+    return "Day market";
+  }
+  if (period === "evening_peak") {
+    return "Evening peak";
+  }
+  if (period === "night") {
+    return "Night market";
+  }
+  return "Market cycle";
+}
+
+function tradeKey(trade: TradeEvent) {
+  return trade.id ?? `${trade.buyer_node_id}-${trade.seller_node_id}-${trade.quantity_kwh}-${trade.unit_price}-${trade.total_cost}-${trade.created ?? ""}`;
+}
+
+function mergeTrades(nextTrades: TradeEvent[], existingTrades: TradeEvent[]) {
+  const seen = new Set<string>();
+  return [...nextTrades, ...existingTrades]
+    .filter((trade) => {
+      const key = tradeKey(trade);
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 100);
 }
 
 async function parseEnvelope<T>(response: Response): Promise<T> {
@@ -123,6 +182,13 @@ async function fetchGridSnapshot() {
 async function fetchPortfolioSnapshot(nodeId: string) {
   return fetch(`${BACKEND_URL}/api/users/portfolio/${nodeId}`).then((response) =>
     parseEnvelope<Portfolio>(response),
+  );
+}
+
+async function fetchLedgerSnapshot(ownerUserId: string) {
+  const params = new URLSearchParams({ owner_user_id: ownerUserId, limit: "100" });
+  return fetch(`${BACKEND_URL}/api/market/ledger?${params}`).then((response) =>
+    parseEnvelope<TradeEvent[]>(response),
   );
 }
 
@@ -207,7 +273,22 @@ export function DashboardClient() {
   const refreshPortfolio = useEffectEvent(async (nodeId: string) => {
     const data = await fetchPortfolioSnapshot(nodeId);
     setPortfolio(data);
+    setAuthUser((prev) =>
+      prev ? { ...prev, wallet_balance: data.wallet.balance, wallet_reserved: data.wallet.reserved } : prev,
+    );
   });
+
+  const refreshLedger = useEffectEvent(async (ownerUserId: string) => {
+    const fetchedTrades = await fetchLedgerSnapshot(ownerUserId);
+    setTrades((prev) => mergeTrades(fetchedTrades, prev));
+  });
+
+  const nodeNameById = Object.fromEntries(
+    nodes.map((node) => [node.id, node.name]),
+  ) as Record<string, string>;
+  const getNodeName = useEffectEvent(
+    (nodeId: string) => nodeNameById[nodeId] ?? nodeId,
+  );
 
   useEffect(() => {
     if (!authUser) {
@@ -216,9 +297,11 @@ export function DashboardClient() {
 
     const timeout = window.setTimeout(() => {
       void refreshGrid();
+      void refreshLedger(authUser.id);
     }, 0);
     const interval = window.setInterval(() => {
       void refreshGrid();
+      void refreshLedger(authUser.id);
     }, 4000);
 
     return () => {
@@ -278,12 +361,16 @@ export function DashboardClient() {
       if (
         incoming.type === "ROUND_OPEN" ||
         incoming.type === "ROUND_SETTLED" ||
-        incoming.type === "ROUND_CLOSED"
+        incoming.type === "ROUND_CLOSED" ||
+        incoming.type === "SIMULATION_STOPPED"
       ) {
         setRoundState((prev) => ({
           ...(prev ?? {}),
           ...(incoming.payload as unknown as RoundState),
         }));
+        if (incoming.type === "ROUND_SETTLED" && selectedNodeId) {
+          void refreshPortfolio(selectedNodeId);
+        }
       }
 
       if (incoming.type === "ORDER_ACCEPTED") {
@@ -295,9 +382,10 @@ export function DashboardClient() {
           source?: string;
         };
         setOrderSideByNode((prev) => ({ ...prev, [payload.node_id]: payload.side }));
+        const nodeName = getNodeName(payload.node_id);
         appendFeed(
-          `${payload.node_id} placed ${payload.side.toUpperCase()} order`,
-          `${formatEnergy(payload.quantity_kwh)} at ${formatMoney(payload.limit_price)} ${payload.source ? `via ${payload.source}` : ""}`,
+          `${nodeName} posted ${payload.side.toUpperCase()} offer`,
+          `${formatEnergy(payload.quantity_kwh)} limit at ${formatMoney(payload.limit_price)} ${payload.source ? `via ${payload.source}` : ""}`,
         );
       }
 
@@ -309,6 +397,8 @@ export function DashboardClient() {
             consumption_kwh: number;
             battery_before_kwh: number;
             battery_after_kwh: number;
+            unmet_demand_kwh?: number;
+            exportable_energy_kwh?: number;
           };
           setTelemetryByNode((prev) => ({
             ...prev,
@@ -317,16 +407,26 @@ export function DashboardClient() {
               consumption_kwh: payload.consumption_kwh,
               battery_before_kwh: payload.battery_before_kwh,
               battery_after_kwh: payload.battery_after_kwh,
+              unmet_demand_kwh: payload.unmet_demand_kwh,
+              exportable_energy_kwh: payload.exportable_energy_kwh,
             },
           }));
           return;
         }
 
         const payload = incoming.payload as unknown as TradeEvent;
-        setTrades((prev) => [payload, ...prev].slice(0, 40));
+        setTrades((prev) => mergeTrades([payload], prev));
+        if (
+          selectedNodeId &&
+          (payload.buyer_node_id === selectedNodeId || payload.seller_node_id === selectedNodeId)
+        ) {
+          void refreshPortfolio(selectedNodeId);
+        }
+        const sellerName = getNodeName(payload.seller_node_id);
+        const buyerName = getNodeName(payload.buyer_node_id);
         appendFeed(
-          `${payload.seller_node_id} sold to ${payload.buyer_node_id}`,
-          `${formatEnergy(payload.quantity_kwh)} at ${formatMoney(payload.unit_price)} for ${formatMoney(payload.total_cost)}`,
+          `${sellerName} settled sale to ${buyerName}`,
+          `${formatEnergy(payload.quantity_kwh)} at ${formatMoney(payload.unit_price)}; seller net ${formatMoney(sellerCredit(payload))}`,
         );
       }
 
@@ -507,20 +607,99 @@ export function DashboardClient() {
   }
 
   const selectedTelemetry = selectedNodeId ? telemetryByNode[selectedNodeId] : null;
-  const myNetMoney = trades.reduce((total, trade) => {
-    if (trade.seller_node_id === selectedNodeId) {
-      return total + trade.total_cost;
-    }
-    if (trade.buyer_node_id === selectedNodeId) {
-      return total - trade.total_cost;
-    }
-    return total;
-  }, 0);
-  const latestMyTrade =
+  const ownedNodeIds = new Set(ownedNodes.map((node) => node.id));
+  const selectedNodeName = selectedNodeId
+    ? nodeNameById[selectedNodeId] ?? selectedNodeId
+    : "your node";
+  const networkProduction = sum(
+    Object.values(telemetryByNode).map((entry) => entry.generation_kwh),
+  );
+  const networkConsumption = sum(
+    Object.values(telemetryByNode).map((entry) => entry.consumption_kwh),
+  );
+  const networkUnmetDemand = sum(
+    Object.values(telemetryByNode).map((entry) => entry.unmet_demand_kwh ?? 0),
+  );
+  const networkExportable = sum(
+    Object.values(telemetryByNode).map((entry) => entry.exportable_energy_kwh ?? 0),
+  );
+  const networkNetDemand = Math.max(networkConsumption - networkProduction, 0);
+  const networkNetSurplus = Math.max(networkProduction - networkConsumption, 0);
+  const myProduction = sum(
+    ownedNodes.map((node) => telemetryByNode[node.id]?.generation_kwh ?? 0),
+  );
+  const myConsumption = sum(
+    ownedNodes.map((node) => telemetryByNode[node.id]?.consumption_kwh ?? 0),
+  );
+  const selectedEnergyStatus = selectedTelemetry
+    ? selectedTelemetry.exportable_energy_kwh && selectedTelemetry.exportable_energy_kwh > 0
+      ? `Exportable ${formatEnergy(selectedTelemetry.exportable_energy_kwh)}`
+      : selectedTelemetry.unmet_demand_kwh && selectedTelemetry.unmet_demand_kwh > 0
+        ? `Needs ${formatEnergy(selectedTelemetry.unmet_demand_kwh)}`
+        : selectedTelemetry.consumption_kwh > selectedTelemetry.generation_kwh
+          ? "Buying from market or battery"
+          : "Balanced locally"
+    : "Waiting for telemetry";
+  const mySpend = sum(
+    trades
+      .filter((trade) => ownedNodeIds.has(trade.buyer_node_id))
+      .map((trade) => buyerDebit(trade)),
+  );
+  const myRevenue = sum(
+    trades
+      .filter((trade) => ownedNodeIds.has(trade.seller_node_id))
+      .map((trade) => sellerCredit(trade)),
+  );
+  const myGrossSales = sum(
+    trades
+      .filter((trade) => ownedNodeIds.has(trade.seller_node_id))
+      .map((trade) => trade.total_cost),
+  );
+  const myFees = sum(
+    trades
+      .filter((trade) => ownedNodeIds.has(trade.seller_node_id) || ownedNodeIds.has(trade.buyer_node_id))
+      .map((trade) => {
+        const isBuyer = ownedNodeIds.has(trade.buyer_node_id);
+        const isSeller = ownedNodeIds.has(trade.seller_node_id);
+        if (isBuyer && isSeller) {
+          return 0;
+        }
+        if (isBuyer) {
+          return Math.max(buyerDebit(trade) - trade.total_cost, 0);
+        }
+        if (isSeller) {
+          return Math.max(trade.total_cost - sellerCredit(trade), 0);
+        }
+        return 0;
+      }),
+  );
+  const myLatestTrade =
     trades.find(
       (trade) =>
-        trade.seller_node_id === selectedNodeId || trade.buyer_node_id === selectedNodeId,
+        ownedNodeIds.has(trade.seller_node_id) || ownedNodeIds.has(trade.buyer_node_id),
     ) ?? null;
+  const activeSellNodes = ownedNodes.filter(
+    (node) => orderSideByNode[node.id] === "sell",
+  );
+  const activeBuyNodes = ownedNodes.filter(
+    (node) => orderSideByNode[node.id] === "buy",
+  );
+  const currentRole = activeSellNodes.length
+    ? `Selling from ${activeSellNodes.map((node) => node.name).join(", ")}`
+    : activeBuyNodes.length
+      ? `Buying for ${activeBuyNodes.map((node) => node.name).join(", ")}`
+      : "Balancing locally with battery or idle";
+  const valueNarrative =
+    myRevenue > mySpend
+      ? "Your homes are earning more from settled exports than they are spending on settled imports this session."
+      : mySpend > myRevenue
+        ? "Your homes are buying local power from neighbors, including the platform fee."
+        : "No owned node has settled a trade yet. Posted sell offers do not change wallet balance until a buyer clears against them.";
+  const latestTradeNarrative = myLatestTrade
+    ? ownedNodeIds.has(myLatestTrade.seller_node_id)
+      ? `${nodeNameById[myLatestTrade.seller_node_id] ?? myLatestTrade.seller_node_id} sold ${formatEnergy(myLatestTrade.quantity_kwh)} and netted ${formatMoney(sellerCredit(myLatestTrade))}.`
+      : `${nodeNameById[myLatestTrade.buyer_node_id] ?? myLatestTrade.buyer_node_id} bought ${formatEnergy(myLatestTrade.quantity_kwh)} and paid ${formatMoney(buyerDebit(myLatestTrade))}.`
+    : "No owned node has cleared a trade yet.";
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -533,13 +712,14 @@ export function DashboardClient() {
                 Local energy exchange in motion.
               </h1>
               <p className="mt-3 max-w-3xl text-sm leading-7 text-zinc-400 md:text-base">
-                Sign in as a homeowner, create your node, then watch the grid generate,
-                bid, clear, and settle in real time over the market stream.
+                Sign in as a homeowner, create your node, then watch the entire
+                connected grid generate, bid, clear, and settle in real time.
               </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <Badge>{roundState?.simulation_enabled ? "Simulation live" : "Simulation idle"}</Badge>
+            <Badge>{marketPeriodLabel(roundState?.market_period)}</Badge>
             <Badge>
               Tick {roundState?.tick ?? 0} / Hour {roundState?.simulated_hour ?? 0}
             </Badge>
@@ -777,9 +957,15 @@ export function DashboardClient() {
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-sm text-zinc-400">
                   <div className="rounded-2xl border border-white/10 p-3">
-                    <div>Orders collected</div>
+                    <div>Buy bids</div>
                     <div className="mt-2 text-2xl font-semibold text-white">
-                      {roundState?.orders_collected ?? 0}
+                      {roundState?.buy_order_count ?? 0}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 p-3">
+                    <div>Sell asks</div>
+                    <div className="mt-2 text-2xl font-semibold text-white">
+                      {roundState?.sell_order_count ?? 0}
                     </div>
                   </div>
                   <div className="rounded-2xl border border-white/10 p-3">
@@ -835,12 +1021,19 @@ export function DashboardClient() {
 
                     <div className="grid grid-cols-2 gap-3">
                       <MetricCard
-                        label="Production"
-                        value={formatEnergy(selectedTelemetry?.generation_kwh ?? 0)}
+                        label="Your production"
+                        value={formatEnergy(myProduction)}
+                        subValue={selectedTelemetry ? `${selectedNodeName} now at ${formatEnergy(selectedTelemetry.generation_kwh)}` : "Across all your homes"}
                       />
                       <MetricCard
-                        label="Consumption"
-                        value={formatEnergy(selectedTelemetry?.consumption_kwh ?? 0)}
+                        label="Your consumption"
+                        value={formatEnergy(myConsumption)}
+                        subValue={selectedTelemetry ? `${selectedNodeName} now at ${formatEnergy(selectedTelemetry.consumption_kwh)}` : "Across all your homes"}
+                      />
+                      <MetricCard
+                        label="Energy position"
+                        value={selectedEnergyStatus}
+                        subValue={selectedNodeName}
                       />
                       <MetricCard
                         label="Battery"
@@ -860,26 +1053,37 @@ export function DashboardClient() {
                   <CardHeader>
                     <CardTitle>Revenue pulse</CardTitle>
                     <CardDescription>
-                      Your cumulative market result and the latest trade involving your node.
+                      Settled wallet movement for the homes owned by your signed-in account.
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <MetricCard
-                      label="Net market P&L"
-                      value={formatMoney(myNetMoney)}
+                      label="Settled export earnings"
+                      value={formatMoney(myRevenue)}
+                      subValue={`${formatMoney(mySpend)} paid for local imports`}
                     />
                     <MetricCard
-                      label="Current sale / trade"
+                      label="Gross sales"
+                      value={formatMoney(myGrossSales)}
+                      subValue={`${formatMoney(myFees)} platform fees on owned trades`}
+                    />
+                    <MetricCard
+                      label="Latest owned trade"
                       value={
-                        latestMyTrade
-                          ? formatMoney(latestMyTrade.total_cost)
+                        myLatestTrade
+                          ? formatMoney(ownedNodeIds.has(myLatestTrade.seller_node_id) ? sellerCredit(myLatestTrade) : buyerDebit(myLatestTrade))
                           : "No trade yet"
                       }
                       subValue={
-                        latestMyTrade
-                          ? `${formatEnergy(latestMyTrade.quantity_kwh)} at ${formatMoney(latestMyTrade.unit_price)}`
-                          : "Waiting for a match"
+                        myLatestTrade
+                          ? latestTradeNarrative
+                          : "Waiting for one of your homes to clear a match"
                       }
+                    />
+                    <MetricCard
+                      label="Grid value for you"
+                      value={currentRole}
+                      subValue={valueNarrative}
                     />
                   </CardContent>
                 </Card>
@@ -889,9 +1093,62 @@ export function DashboardClient() {
             <div className="grid gap-6 lg:grid-cols-2">
               <Card>
                 <CardHeader>
+                  <CardTitle>Network market state</CardTitle>
+                  <CardDescription>
+                    This simulation runs across the whole connected neighborhood, not only your selected home.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-3">
+                    <MetricCard
+                      label="Market period"
+                      value={marketPeriodLabel(roundState?.market_period)}
+                      subValue={`Solar ${(roundState?.solar_availability_factor ?? 0).toFixed(2)} / hour ${roundState?.simulated_hour ?? 0}`}
+                    />
+                    <MetricCard
+                      label="Buy bids"
+                      value={`${roundState?.buy_order_count ?? 0}`}
+                      subValue={`${formatEnergy(roundState?.unmatched_buy_volume_kwh ?? 0)} still unmatched`}
+                    />
+                    <MetricCard
+                      label="Sell asks"
+                      value={`${roundState?.sell_order_count ?? 0}`}
+                      subValue={`${formatEnergy(roundState?.unmatched_sell_volume_kwh ?? 0)} still unmatched`}
+                    />
+                    <MetricCard
+                      label="Network generation"
+                      value={formatEnergy(networkProduction)}
+                      subValue={`${formatEnergy(networkExportable)} exportable after batteries`}
+                    />
+                    <MetricCard
+                      label="Network demand"
+                      value={formatEnergy(networkConsumption)}
+                      subValue={`${formatEnergy(networkUnmetDemand || networkNetDemand)} seeking supply`}
+                    />
+                    <MetricCard
+                      label="Net balance"
+                      value={networkNetDemand > 0 ? `${formatEnergy(networkNetDemand)} deficit` : `${formatEnergy(networkNetSurplus)} surplus`}
+                      subValue="Production minus consumption this tick"
+                    />
+                    <MetricCard
+                      label="Cleared volume"
+                      value={formatEnergy(roundState?.volume_traded_kwh ?? 0)}
+                      subValue={`${roundState?.trade_count ?? 0} trades this round`}
+                    />
+                    <MetricCard
+                      label="Clearing price"
+                      value={formatMoney(roundState?.clearing_price ?? 0)}
+                      subValue={`Round ${roundState?.tick ?? 0}`}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
                   <CardTitle>Order and trade feed</CardTitle>
                   <CardDescription>
-                    Live broadcast of orders, telemetry snapshots, and settled trades.
+                    Posted offers plus settled trades. Offers are intent; settlements move wallets.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -924,7 +1181,7 @@ export function DashboardClient() {
                 <CardHeader>
                   <CardTitle>Recent market settlements</CardTitle>
                   <CardDescription>
-                    Buyer, seller, volume, and final value from the most recent fills.
+                    Buyer, seller, volume, gross value, and platform fee from cleared fills.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -941,15 +1198,19 @@ export function DashboardClient() {
                         >
                           <div>
                             <p className="font-medium text-white">
-                              {trade.seller_node_id} to {trade.buyer_node_id}
+                              {nodeNameById[trade.seller_node_id] ?? trade.seller_node_id} to {nodeNameById[trade.buyer_node_id] ?? trade.buyer_node_id}
                             </p>
                             <p className="mt-1 text-sm text-zinc-400">
                               {formatEnergy(trade.quantity_kwh)} at {formatMoney(trade.unit_price)}
+                              {trade.platform_fee ? `, fee ${formatMoney(trade.platform_fee)}` : ""}
                             </p>
                           </div>
                           <div className="text-right">
                             <p className="font-semibold text-white">
                               {formatMoney(trade.total_cost)}
+                            </p>
+                            <p className="mt-1 text-xs text-zinc-500">
+                              seller net {formatMoney(sellerCredit(trade))}
                             </p>
                           </div>
                         </div>

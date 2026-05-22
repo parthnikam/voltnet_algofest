@@ -3,6 +3,7 @@ import random
 from dataclasses import dataclass
 
 from core.balancer import NodeEnergyState, balance_node_energy, compute_battery_reserve
+from core.matcher import PLATFORM_FEE_PER_KWH
 
 
 @dataclass(slots=True)
@@ -109,26 +110,62 @@ def simulate_node_round(node: SimulatedNode, tick: int, simulated_hour: int, sol
     )
 
     order: ProposedOrder | None = None
-    if balance.exportable_energy_kwh > 0.01:
-        base_price = 4.2 + (0.8 if simulated_hour >= 18 else 0.2)
+    is_peak_hour = 18 <= simulated_hour <= 22
+    is_night = simulated_hour <= 5 or simulated_hour >= 19
+    reserve = compute_battery_reserve(node.battery_capacity_kwh)
+    local_energy_gap_kwh = max(consumption_kwh - generation_kwh, 0.0)
+    stored_surplus_kwh = max(balance.battery_after_kwh - reserve, 0.0)
+    same_tick_solar_surplus_kwh = max(generation_kwh - consumption_kwh, 0.0)
+    battery_offer_kwh = 0.0
+
+    if (
+        balance.exportable_energy_kwh <= 0.01
+        and same_tick_solar_surplus_kwh > 0.25
+        and solar_factor >= 0.45
+    ):
+        battery_offer_kwh = round(min(same_tick_solar_surplus_kwh * 0.4, max(node.base_load_kw * 0.65, 0.25)), 4)
+
+    if (
+        balance.exportable_energy_kwh <= 0.01
+        and is_peak_hour
+        and node.has_solar
+        and stored_surplus_kwh > 0.25
+    ):
+        battery_offer_kwh = max(
+            battery_offer_kwh,
+            round(min(stored_surplus_kwh * 0.35, max(node.base_load_kw * 0.75, 0.25)), 4),
+        )
+
+    if balance.exportable_energy_kwh > 0.01 or battery_offer_kwh > 0.01:
+        sell_quantity = round(max(balance.exportable_energy_kwh, battery_offer_kwh), 4)
+        battery_after_sale = balance.battery_after_kwh
+        if battery_offer_kwh > 0:
+            battery_floor = max(balance.battery_before_kwh, reserve)
+            battery_after_sale = round(max(balance.battery_after_kwh - sell_quantity, battery_floor), 4)
+
+        base_price = 4.1 + (0.4 if is_peak_hour else 0.1)
         limit_price = round(base_price + price_rng.uniform(0.2, 1.4), 2)
         order = ProposedOrder(
             node_id=node.node_id,
             owner_user_id=node.owner_user_id,
             tick=tick,
             side="sell",
-            quantity_kwh=round(balance.exportable_energy_kwh, 4),
+            quantity_kwh=sell_quantity,
             limit_price=limit_price,
-            battery_after_kwh=balance.battery_after_kwh,
+            battery_after_kwh=battery_after_sale,
             wallet_balance=node.wallet_balance,
             signature=_round_signature(node.node_id, tick, "sell-order"),
         )
-    elif balance.unmet_demand_kwh > 0.01 and node.wallet_balance > 0:
-        urgency_markup = 0.8 if balance.battery_after_kwh <= compute_battery_reserve(node.battery_capacity_kwh) else 0.2
-        base_price = 3.4 + urgency_markup + (0.9 if simulated_hour >= 18 else 0.0)
-        limit_price = round(base_price + price_rng.uniform(0.1, 1.2), 2)
-        affordable_kwh = round(node.wallet_balance / max(limit_price, 0.01), 4)
-        quantity_kwh = min(balance.unmet_demand_kwh, affordable_kwh)
+    elif local_energy_gap_kwh > 0.01 and node.wallet_balance > 0:
+        reserve_pressure = 0.8 if balance.battery_after_kwh <= reserve * 1.25 else 0.25
+        consumer_pressure = 0.55 if not node.has_solar else 0.15
+        time_pressure = 0.75 if is_peak_hour else 0.25 if is_night else 0.0
+        base_price = 4.2 + reserve_pressure + consumer_pressure + time_pressure
+        limit_price = round(base_price + price_rng.uniform(0.2, 1.25), 2)
+        affordable_kwh = round(node.wallet_balance / max(limit_price + PLATFORM_FEE_PER_KWH, 0.01), 4)
+        reserve_top_up = max((reserve * 1.25) - balance.battery_after_kwh, 0.0)
+        buy_target_kwh = round(max(local_energy_gap_kwh, balance.unmet_demand_kwh) + reserve_top_up, 4)
+        quantity_kwh = min(buy_target_kwh, affordable_kwh)
         if quantity_kwh > 0.01:
             order = ProposedOrder(
                 node_id=node.node_id,

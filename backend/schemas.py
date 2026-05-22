@@ -110,6 +110,9 @@ class LedgerRecord(StrictModel):
     quantity_kwh: Optional[float] = None
     unit_price: Optional[float] = None
     total_cost: Optional[float] = None
+    platform_fee: Optional[float] = None
+    buyer_debit: Optional[float] = None
+    seller_credit: Optional[float] = None
     settlement_status: Optional[str] = None
     created: Optional[str] = None
 

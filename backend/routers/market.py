@@ -32,6 +32,8 @@ async def submit_edge_order(payload: OrderRequest):
             source="api",
             telemetry_hash=payload.telemetry_hash,
             status="pending",
+            round_id=orchestrator.current_round_record_id,
+            expires_at=orchestrator.round_close_at,
         )
         data = {
             "order_id": order["id"],
@@ -45,7 +47,7 @@ async def submit_edge_order(payload: OrderRequest):
                 quantity_kwh=payload.quantity_kwh,
                 remaining_kwh=payload.quantity_kwh,
                 limit_price=payload.limit_price,
-                status=order.get("status", "pending"),
+                status=order.get("order_status", order.get("status", "pending")),
                 source="api",
                 signature=payload.signature,
                 telemetry_hash=payload.telemetry_hash,
@@ -71,7 +73,7 @@ async def start_simulation():
 
 @router.post("/simulation/stop")
 async def stop_simulation():
-    orchestrator.stop_simulation()
+    await orchestrator.stop_simulation()
     return success_response("Simulation stopped.", orchestrator.get_round_state())
 
 
@@ -148,7 +150,10 @@ async def list_ledger_entries(
                 seller_node_id=entry.get("seller_node"),
                 quantity_kwh=entry.get("quantity_kwh"),
                 unit_price=entry.get("unit_price", entry.get("clearing_price")),
-                total_cost=entry.get("total_cost"),
+                total_cost=entry.get("total_cost", entry.get("gross_amount")),
+                platform_fee=entry.get("platform_fee"),
+                buyer_debit=entry.get("net_buyer_debit"),
+                seller_credit=entry.get("net_seller_credit"),
                 settlement_status=entry.get("settlement_status"),
                 created=entry.get("created"),
             ).model_dump()

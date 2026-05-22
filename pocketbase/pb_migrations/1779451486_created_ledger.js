@@ -1,0 +1,338 @@
+/// <reference path="../pb_data/types.d.ts" />
+migrate((app) => {
+  const collection = new Collection({
+    "createRule": null,
+    "deleteRule": null,
+    "fields": [
+      {
+        "autogeneratePattern": "[a-z0-9]{15}",
+        "hidden": false,
+        "id": "text3208210256",
+        "max": 15,
+        "min": 15,
+        "name": "id",
+        "pattern": "^[a-z0-9]+$",
+        "presentable": false,
+        "primaryKey": true,
+        "required": true,
+        "system": true,
+        "type": "text"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "pbc_4092543785",
+        "hidden": false,
+        "id": "relation3320769076",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "round",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "pbc_750742419",
+        "hidden": false,
+        "id": "relation3339675943",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "buy_order",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "pbc_750742419",
+        "hidden": false,
+        "id": "relation3984711620",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "sell_order",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "pbc_3598433047",
+        "hidden": false,
+        "id": "relation3199144145",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "buyer_node",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "pbc_3598433047",
+        "hidden": false,
+        "id": "relation2273717669",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "seller_node",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "_pb_users_auth_",
+        "hidden": false,
+        "id": "relation3057856221",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "buyer_user",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "cascadeDelete": false,
+        "collectionId": "_pb_users_auth_",
+        "hidden": false,
+        "id": "relation2406093737",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "seller_user",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "hidden": false,
+        "id": "number1198892646",
+        "max": null,
+        "min": null,
+        "name": "quantity_kwh",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "number1106926802",
+        "max": null,
+        "min": null,
+        "name": "unit_price",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "number2696075003",
+        "max": null,
+        "min": null,
+        "name": "gross_amount",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "number544183974",
+        "max": null,
+        "min": null,
+        "name": "platform_fee",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "number3606053175",
+        "max": null,
+        "min": null,
+        "name": "net_buyer_debit",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "number3813417286",
+        "max": null,
+        "min": null,
+        "name": "net_seller_credit",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "select3924312897",
+        "maxSelect": 1,
+        "name": "settlement_status",
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "select",
+        "values": [
+          "pending",
+          "settled",
+          "failed",
+          "reversed"
+        ]
+      },
+      {
+        "hidden": false,
+        "id": "number60216017",
+        "max": null,
+        "min": null,
+        "name": "ledger_sequence",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text3063228854",
+        "max": 0,
+        "min": 0,
+        "name": "prev_hash",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text1973033643",
+        "max": 0,
+        "min": 0,
+        "name": "entry_hash",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "autogeneratePattern": "",
+        "hidden": false,
+        "id": "text3614147369",
+        "max": 0,
+        "min": 0,
+        "name": "sequencer_signature",
+        "pattern": "",
+        "presentable": false,
+        "primaryKey": false,
+        "required": false,
+        "system": false,
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "number349689186",
+        "max": null,
+        "min": null,
+        "name": "buyer_balance_before",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "number1773869045",
+        "max": null,
+        "min": null,
+        "name": "buyer_balance_after",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "number4022947577",
+        "max": null,
+        "min": null,
+        "name": "seller_balance_before",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "number2741823914",
+        "max": null,
+        "min": null,
+        "name": "seller_balance_after",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      },
+      {
+        "hidden": false,
+        "id": "autodate3332085495",
+        "name": "updated",
+        "onCreate": true,
+        "onUpdate": true,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      }
+    ],
+    "id": "pbc_4150843890",
+    "indexes": [],
+    "listRule": null,
+    "name": "ledger",
+    "system": false,
+    "type": "base",
+    "updateRule": null,
+    "viewRule": null
+  });
+
+  return app.save(collection);
+}, (app) => {
+  const collection = app.findCollectionByNameOrId("pbc_4150843890");
+
+  return app.delete(collection);
+})
