@@ -6,10 +6,11 @@ router = APIRouter(prefix="/api/users", tags=["Users & Portfolios"])
 
 class AddNodePaylod(BaseModel):
     name:str 
+    owner: str 
     has_solar: bool 
     battery_capacity: float
     initial_wallet: float 
-    
+
 
 
 @router.post("/register")
@@ -17,6 +18,7 @@ async def register_new_grid_node(payload: AddNodePaylod):
     # add new houses into the grid 
     mock_house_data = {
         "name": payload.name,
+        "owner": payload.owner,
         "wallet_balance": payload.initial_wallet,
         "has_solar": payload.has_solar,
         "battery_capacity": payload.battery_capacity,
