@@ -84,9 +84,9 @@ class HouseAgent:
                         # Push the bid back over the wire while the 2s bidding window is open
                         await websocket.send(json.dumps(bid_payload))
                         logger.info(
-                            f"🏠 House {self.node_id} (Hour {hour:02d}:00) -> "
-                            f"⚡ Gen: {generation}kW | Con: {consumption}kW | "
-                            f"💵 Fired Bid: {action} {energy_amount}kWh @ ₹{target_price}/kWh"
+                            f"\n🏠 House {self.node_id} (Hour {hour:02d}:00) -> "
+                            f"\n⚡ Gen: {generation}kW | Con: {consumption}kW | "
+                            f"\n💵 Fired Bid: {action} {energy_amount}kWh @ ₹{target_price}/kWh"
                         )
             
             except websockets.ConnectionClosed:
