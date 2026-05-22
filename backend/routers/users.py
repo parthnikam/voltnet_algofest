@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import APIRouter
 
 from response_utils import api_error, success_response
@@ -12,6 +14,7 @@ from schemas import (
 from services.pb_client import pb
 
 router = APIRouter(prefix="/api/users", tags=["Users & Portfolios"])
+logger = logging.getLogger("GridUsers")
 
 
 def normalize_node_name(node: dict) -> str:
@@ -57,8 +60,16 @@ async def register_new_grid_node(payload: NodeRegistrationRequest):
     }
 
     try:
-        await pb.update_user_wallet(payload.owner_user_id, initial_wallet_balance)
         record = await pb.create_node(node_payload)
+        try:
+            await pb.update_user_wallet(payload.owner_user_id, initial_wallet_balance)
+        except Exception as exc:
+            logger.warning(
+                "Node %s was created, but user wallet sync failed for user %s: %s",
+                record.get("id"),
+                payload.owner_user_id,
+                exc,
+            )
         data = {
             "node_id": record["id"],
             "owner_user_id": payload.owner_user_id,

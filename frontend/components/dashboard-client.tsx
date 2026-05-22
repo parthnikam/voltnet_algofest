@@ -101,6 +101,16 @@ type TelemetryEvent = {
   exportable_energy_kwh?: number;
 };
 
+type NodeRegistrationResponse = {
+  node_id: string;
+  owner_user_id: string;
+  node_status: string;
+  wallet: {
+    balance: number;
+    reserved: number;
+  };
+};
+
 const storageKey = "voltnet-session";
 
 function formatMoney(value: number) {
@@ -255,6 +265,10 @@ export function DashboardClient() {
     ].slice(0, 20));
   });
 
+  const persistSession = useEffectEvent((user: AuthUser, token: string) => {
+    window.localStorage.setItem(storageKey, JSON.stringify({ user, token }));
+  });
+
   const refreshGrid = useEffectEvent(async () => {
     const { nodes: fetchedNodes, round: currentRound } = await fetchGridSnapshot();
 
@@ -273,9 +287,15 @@ export function DashboardClient() {
   const refreshPortfolio = useEffectEvent(async (nodeId: string) => {
     const data = await fetchPortfolioSnapshot(nodeId);
     setPortfolio(data);
-    setAuthUser((prev) =>
-      prev ? { ...prev, wallet_balance: data.wallet.balance, wallet_reserved: data.wallet.reserved } : prev,
-    );
+    if (authUser) {
+      const updatedUser = {
+        ...authUser,
+        wallet_balance: data.wallet.balance,
+        wallet_reserved: data.wallet.reserved,
+      };
+      setAuthUser(updatedUser);
+      persistSession(updatedUser, authToken);
+    }
   });
 
   const refreshLedger = useEffectEvent(async (ownerUserId: string) => {
@@ -546,7 +566,7 @@ export function DashboardClient() {
     setLoading(true);
     setMessage("");
     try {
-      await fetch(`${BACKEND_URL}/api/users/register`, {
+      const createdNode = await fetch(`${BACKEND_URL}/api/users/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -559,7 +579,15 @@ export function DashboardClient() {
           max_solar_kw: Number(nodeForm.maxSolar),
           base_load_kw: Number(nodeForm.baseLoad),
         }),
-      }).then((response) => parseEnvelope<Record<string, unknown>>(response));
+      }).then((response) => parseEnvelope<NodeRegistrationResponse>(response));
+
+      const updatedUser = {
+        ...authUser,
+        wallet_balance: createdNode.wallet.balance,
+        wallet_reserved: createdNode.wallet.reserved,
+      };
+      setAuthUser(updatedUser);
+      window.localStorage.setItem(storageKey, JSON.stringify({ user: updatedUser, token: authToken }));
 
       const { nodes: fetchedNodes, round } = await fetchGridSnapshot();
       setNodes(fetchedNodes);
