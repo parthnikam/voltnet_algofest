@@ -11,6 +11,8 @@ TEST_NEIGHBORHOOD = [
         "has_solar": True,
         "battery_capacity": 13.5,
         "battery_current": 5.0,
+        "max_solar": 5.5,
+        "base_load": 1.2,
         "public_key": "ecdsa_pub_key_mock_alpha_01"
     },
     {
@@ -19,6 +21,8 @@ TEST_NEIGHBORHOOD = [
         "has_solar": True,
         "battery_capacity": 20.0,
         "battery_current": 10.0,
+        "max_solar": 4.8,
+        "base_load": 1.5,
         "public_key": "ecdsa_pub_key_mock_beta_02"
     },
     {
@@ -27,6 +31,8 @@ TEST_NEIGHBORHOOD = [
         "has_solar": True,
         "battery_capacity": 20.0,
         "battery_current": 10.0,
+        "max_solar": 4.2,
+        "base_load": 1.4,
         "public_key": "ecdsa_pub_key_mock_gamma_06"
     },
     {
@@ -35,6 +41,8 @@ TEST_NEIGHBORHOOD = [
         "has_solar": False,
         "battery_capacity": 0.0,
         "battery_current": 0.0,
+        "max_solar": 0.0,
+        "base_load": 2.1,
         "public_key": "ecdsa_pub_key_mock_charlie_03"
     },
     {
@@ -43,6 +51,8 @@ TEST_NEIGHBORHOOD = [
         "has_solar": False,
         "battery_capacity": 0.0,
         "battery_current": 0.0,
+        "max_solar": 0.0,
+        "base_load": 3.0,
         "public_key": "ecdsa_pub_key_mock_delta_04"
     },
     {
@@ -51,6 +61,8 @@ TEST_NEIGHBORHOOD = [
         "has_solar": True,
         "battery_capacity": 7.0,
         "battery_current": 3.5,
+        "max_solar": 2.6,
+        "base_load": 0.9,
         "public_key": "ecdsa_pub_key_mock_eco_05"
     }
 ]

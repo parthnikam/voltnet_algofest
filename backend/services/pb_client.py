@@ -15,7 +15,7 @@ class PocketBaseClient:
         return response.json()
 
     async def get_all_nodes(self) -> List[Dict]:
-        response = await self._request_json("GET", "/nodes/records")
+        response = await self._request_json("GET", "/nodes/records?perPage=200")
         return response.get("items", [])
 
     async def get_node_by_id(self, node_id: str) -> Dict:
@@ -36,6 +36,24 @@ class PocketBaseClient:
             "battery_current": battery,
         }
         return await self._request_json("PATCH", f"/nodes/records/{node_id}", json=payload)
+
+    async def update_node_battery(self, node_id: str, battery: float):
+        payload = {"battery_current": battery}
+        return await self._request_json("PATCH", f"/nodes/records/{node_id}", json=payload)
+
+    async def update_node_wallet(self, node_id: str, balance: float):
+        payload = {"wallet_balance": balance}
+        return await self._request_json("PATCH", f"/nodes/records/{node_id}", json=payload)
+
+    async def update_market_order_status(self, order_id: str, status: str):
+        payload = {"status": status}
+        return await self._request_json("PATCH", f"/market_orders/records/{order_id}", json=payload)
+
+    async def update_user_wallet(self, user_id: str, balance: float):
+        try:
+            return await self._request_json("PATCH", f"/users/records/{user_id}", json={"wallet_balance": balance})
+        except Exception:
+            return await self._request_json("PATCH", f"/users/records/{user_id}", json={"wallet_ballance": balance})
 
     async def create_market_order(
         self,
