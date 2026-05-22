@@ -1,69 +1,96 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
+
+from response_utils import api_error, success_response
+from schemas import (
+    BatterySummary,
+    NodeRegistrationRequest,
+    NodeStatus,
+    NodeSummary,
+    PortfolioResponse,
+    WalletSummary,
+)
 from services.pb_client import pb
-from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/users", tags=["Users & Portfolios"])
 
-class AddNodePaylod(BaseModel):
-    name:str 
-    owner: str 
-    has_solar: bool 
-    battery_capacity: float
-    initial_wallet: float 
-
-
 
 @router.post("/register")
-async def register_new_grid_node(payload: AddNodePaylod):
-    # add new houses into the grid 
-    mock_house_data = {
+async def register_new_grid_node(payload: NodeRegistrationRequest):
+    if payload.initial_battery_kwh > payload.battery_capacity_kwh:
+        raise api_error(400, "Initial battery cannot exceed battery capacity.")
+
+    node_payload = {
         "name": payload.name,
-        "owner": payload.owner,
-        "wallet_balance": payload.initial_wallet,
+        "owner": payload.owner_user_id,
         "has_solar": payload.has_solar,
-        "battery_capacity": payload.battery_capacity,
-        "battery_current": payload.battery_capacity * 0.5 if payload.has_solar else 0.0,
-        "public_key": f"ecdsa_pub_generated_mock_{payload.name.lower().replace(' ', '_')}"
-    }    
+        "battery_capacity": payload.battery_capacity_kwh,
+        "battery_current": payload.initial_battery_kwh,
+        "wallet_balance": payload.initial_wallet_balance or 0.0,
+        "max_solar": payload.max_solar_kw,
+        "base_load": payload.base_load_kw,
+        "public_key": f"ecdsa_pub_generated_mock_{payload.name.lower().replace(' ', '_')}",
+    }
 
     try:
-        # Reuses your standard HTTP client wrapper logic
-        import httpx
-        async with httpx.AsyncClient(base_url="http://127.0.0.1:8090/api/collections") as client:
-            response = await client.post("/nodes/records", json=mock_house_data)
-            if response.status_code in [200, 201]:
-                return {"status": "success", "node": response.json()}
-            else:
-                raise HTTPException(status_code=400, detail=f"PocketBase rejection: {response.text}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal database registration failure: {str(e)}")
+        record = await pb.create_node(node_payload)
+        data = {
+            "node_id": record["id"],
+            "owner_user_id": payload.owner_user_id,
+            "node_status": record.get("status", NodeStatus.ACTIVE.value),
+            "wallet": WalletSummary(
+                balance=payload.initial_wallet_balance,
+                reserved=0.0,
+            ).model_dump(),
+        }
+        return success_response("Grid node registered successfully.", data)
+    except Exception as exc:
+        raise api_error(500, f"Internal database registration failure: {str(exc)}")
 
 
 @router.get("/list")
 async def list_grid_nodes():
     try:
         nodes = await pb.get_all_nodes()
-        data = [{"id":node["id"], "name":node["name"],"has_solar":node["has_solar"]} for node in nodes]
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch grid nodes: {str(e)}")    
+        data = [
+            NodeSummary(
+                id=node["id"],
+                name=node["name"],
+                owner_user_id=node.get("owner"),
+                has_solar=node.get("has_solar", False),
+                status=node.get("status", NodeStatus.ACTIVE.value),
+            ).model_dump()
+            for node in nodes
+        ]
+        return success_response("Grid nodes fetched successfully.", data)
+    except Exception as exc:
+        raise api_error(500, f"Failed to fetch grid nodes: {str(exc)}")
 
 
 @router.get("/portfolio/{node_id}")
 async def get_node_portfolio(node_id: str):
     try:
         node_data = await pb.get_node_by_id(node_id)
-        data = {
-            "id": node_data["id"],
-            "name": node_data["name"],
-            "wallet_balance": node_data["wallet_balance"],
-            "battery": {
-                "current": node_data["battery_current"],
-                "capacity": node_data["battery_capacity"]
-            },
-            "has_solar": node_data["has_solar"]
-        }
+        owner_user = await pb.get_user_by_id(node_data.get("owner")) if node_data.get("owner") else None
+        latest_order = await pb.get_latest_market_order(node_id)
 
-        return data
+        portfolio = PortfolioResponse(
+            id=node_data["id"],
+            name=node_data["name"],
+            status=node_data.get("status", NodeStatus.ACTIVE.value),
+            owner_user_id=node_data.get("owner"),
+            has_solar=node_data.get("has_solar", False),
+            max_solar_kw=node_data.get("max_solar", 0.0) or 0.0,
+            base_load_kw=node_data.get("base_load", 0.0) or 0.0,
+            wallet=WalletSummary(
+                balance=(owner_user or {}).get("wallet_balance", node_data.get("wallet_balance")),
+                reserved=(owner_user or {}).get("wallet_reserved", 0.0) or 0.0,
+            ),
+            battery=BatterySummary(
+                current_kwh=node_data.get("battery_current", 0.0) or 0.0,
+                capacity_kwh=node_data.get("battery_capacity", 0.0) or 0.0,
+            ),
+            latest_order=latest_order,
+        )
+        return success_response("Portfolio fetched successfully.", portfolio.model_dump())
     except Exception:
-        raise HTTPException(status_code=404, detail="Grid hardware node not found.")
+        raise api_error(404, "Grid hardware node not found.")
