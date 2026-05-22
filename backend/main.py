@@ -1,12 +1,19 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from services.pb_client import pb
 from routers import users, market, websockets
+from routers.websockets import orchestrator
 from pydantic import BaseModel
 import asyncio 
 
 
-app = FastAPI(title="VoltNet Microgrid Core Engine")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    asyncio.create_task(orchestrator.start_simulation_loop())
+    yield 
+
+app = FastAPI(title="VoltNet Microgrid Core Engine", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware, 
@@ -83,6 +90,7 @@ async def market_stream_endpoint(websocket: WebSocket):
             await asyncio.sleep(10)
     except WebSocketDisconnect:
         active_connections.remove(websocket)
+
 
 async def broadcast_market_tick(data: dict):
     for connection in active_connections:
