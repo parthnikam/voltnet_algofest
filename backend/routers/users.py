@@ -23,11 +23,16 @@ async def register_new_grid_node(payload: NodeRegistrationRequest):
         "name": payload.name,
         "owner": payload.owner_user_id,
         "has_solar": payload.has_solar,
-        "battery_capacity": payload.battery_capacity_kwh,
-        "battery_current": payload.initial_battery_kwh,
-        "wallet_balance": payload.initial_wallet_balance or 0.0,
-        "max_solar": payload.max_solar_kw,
-        "base_load": payload.base_load_kw,
+        "battery_capacity_kwh": payload.battery_capacity_kwh,
+        "battery_current_kwh": payload.initial_battery_kwh,
+        "battery_min_reserve_kwh": round(payload.battery_capacity_kwh * 0.15, 4),
+        "max_charge_rate_kw": max(payload.battery_capacity_kwh * 0.35, 0.0),
+        "max_discharge_rate_kw": max(payload.battery_capacity_kwh * 0.35, 0.0),
+        "max_solar_kw": payload.max_solar_kw,
+        "base_load_kw": payload.base_load_kw,
+        "grid_import_enabled": True,
+        "grid_export_enabled": payload.has_solar,
+        "status": NodeStatus.ACTIVE.value,
         "public_key": f"ecdsa_pub_generated_mock_{payload.name.lower().replace(' ', '_')}",
     }
 
@@ -56,9 +61,9 @@ async def list_grid_nodes():
                 id=node["id"],
                 name=node["name"],
                 owner_user_id=node.get("owner"),
-                has_solar=node.get("has_solar", False),
-                status=node.get("status", NodeStatus.ACTIVE.value),
-            ).model_dump()
+            has_solar=node.get("has_solar", False),
+            status=node.get("status", NodeStatus.ACTIVE.value),
+        ).model_dump()
             for node in nodes
         ]
         return success_response("Grid nodes fetched successfully.", data)
@@ -79,15 +84,15 @@ async def get_node_portfolio(node_id: str):
             status=node_data.get("status", NodeStatus.ACTIVE.value),
             owner_user_id=node_data.get("owner"),
             has_solar=node_data.get("has_solar", False),
-            max_solar_kw=node_data.get("max_solar", 0.0) or 0.0,
-            base_load_kw=node_data.get("base_load", 0.0) or 0.0,
+            max_solar_kw=node_data.get("max_solar_kw", node_data.get("max_solar", 0.0)) or 0.0,
+            base_load_kw=node_data.get("base_load_kw", node_data.get("base_load", 0.0)) or 0.0,
             wallet=WalletSummary(
                 balance=(owner_user or {}).get("wallet_balance", node_data.get("wallet_balance")),
                 reserved=(owner_user or {}).get("wallet_reserved", 0.0) or 0.0,
             ),
             battery=BatterySummary(
-                current_kwh=node_data.get("battery_current", 0.0) or 0.0,
-                capacity_kwh=node_data.get("battery_capacity", 0.0) or 0.0,
+                current_kwh=node_data.get("battery_current_kwh", node_data.get("battery_current", 0.0)) or 0.0,
+                capacity_kwh=node_data.get("battery_capacity_kwh", node_data.get("battery_capacity", 0.0)) or 0.0,
             ),
             latest_order=latest_order,
         )

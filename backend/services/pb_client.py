@@ -33,13 +33,20 @@ class PocketBaseClient:
     async def update_wallet_and_battery(self, node_id: str, balance: float, battery: float):
         payload = {
             "wallet_balance": balance,
-            "battery_current": battery,
+            "battery_current_kwh": battery,
         }
-        return await self._request_json("PATCH", f"/nodes/records/{node_id}", json=payload)
+        try:
+            return await self._request_json("PATCH", f"/nodes/records/{node_id}", json=payload)
+        except Exception:
+            payload["battery_current"] = battery
+            return await self._request_json("PATCH", f"/nodes/records/{node_id}", json=payload)
 
     async def update_node_battery(self, node_id: str, battery: float):
-        payload = {"battery_current": battery}
-        return await self._request_json("PATCH", f"/nodes/records/{node_id}", json=payload)
+        payload = {"battery_current_kwh": battery}
+        try:
+            return await self._request_json("PATCH", f"/nodes/records/{node_id}", json=payload)
+        except Exception:
+            return await self._request_json("PATCH", f"/nodes/records/{node_id}", json={"battery_current": battery})
 
     async def update_node_wallet(self, node_id: str, balance: float):
         payload = {"wallet_balance": balance}

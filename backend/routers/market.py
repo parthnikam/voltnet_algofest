@@ -63,6 +63,18 @@ async def get_current_round():
     return success_response("Current round fetched successfully.", orchestrator.get_round_state())
 
 
+@router.post("/simulation/start")
+async def start_simulation():
+    orchestrator.start_simulation()
+    return success_response("Simulation started.", orchestrator.get_round_state())
+
+
+@router.post("/simulation/stop")
+async def stop_simulation():
+    orchestrator.stop_simulation()
+    return success_response("Simulation stopped.", orchestrator.get_round_state())
+
+
 @router.get("/rounds/{tick}")
 async def get_round_by_tick(tick: int):
     round_data = orchestrator.get_round_state_for_tick(tick)

@@ -63,10 +63,10 @@ def build_simulated_node(record: dict) -> SimulatedNode:
         has_solar=bool(record.get("has_solar", False)),
         public_key=record.get("public_key", f"sim_pub_{record['id']}"),
         wallet_balance=float(record.get("wallet_balance", 0.0) or 0.0),
-        battery_capacity_kwh=float(record.get("battery_capacity", 0.0) or 0.0),
-        battery_current_kwh=float(record.get("battery_current", 0.0) or 0.0),
-        max_solar_kw=float(record.get("max_solar", 0.0) or 0.0),
-        base_load_kw=float(record.get("base_load", 1.0) or 1.0),
+        battery_capacity_kwh=float(record.get("battery_capacity_kwh", record.get("battery_capacity", 0.0)) or 0.0),
+        battery_current_kwh=float(record.get("battery_current_kwh", record.get("battery_current", 0.0)) or 0.0),
+        max_solar_kw=float(record.get("max_solar_kw", record.get("max_solar", 0.0)) or 0.0),
+        base_load_kw=float(record.get("base_load_kw", record.get("base_load", 1.0)) or 1.0),
     )
 
 

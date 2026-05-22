@@ -39,6 +39,7 @@ class GridOrchestrator:
         self.round_history: Dict[int, dict] = {}
         self.simulated_orders_by_id: Dict[str, dict] = {}
         self.last_trades: List[dict] = []
+        self.simulation_enabled = False
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -64,6 +65,7 @@ class GridOrchestrator:
             "window_close_at": self.round_close_at.isoformat() if self.round_close_at else None,
             "orders_collected": len(self.collected_orders),
             "telemetry_count": len(self.telemetry_events),
+            "simulation_enabled": self.simulation_enabled,
         }
 
     def get_round_state_for_tick(self, tick: int) -> Optional[dict]:
@@ -95,6 +97,10 @@ class GridOrchestrator:
         await asyncio.sleep(3)
 
         while True:
+            if not self.simulation_enabled:
+                await asyncio.sleep(0.5)
+                continue
+
             logger.info("Simulation tick %s started.", self.current_tick)
 
             try:
@@ -208,6 +214,12 @@ class GridOrchestrator:
 
             self.current_tick += 1
             await asyncio.sleep(1.0)
+
+    def start_simulation(self):
+        self.simulation_enabled = True
+
+    def stop_simulation(self):
+        self.simulation_enabled = False
 
     async def execute_market_clearing(self):
         logger.info("Running double auction clearing calculations...")
